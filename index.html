@@ -1362,7 +1362,7 @@ body > .brand{display:none!important}
   contain-intrinsic-size:auto 52px;
 }
 /* Keep floating/fixed controls on their own layer so they don't repaint the whole page while scrolling. */
-#tjManualRefreshBtn,#syncChip{will-change:transform;transform:translateZ(0)}
+#syncChip{will-change:transform;transform:translateZ(0)}
 </style>
 
 <style id="tjHideDashCss">
@@ -3920,7 +3920,7 @@ let anticipatedLapseRows=[];try{anticipatedLapseRows=JSON.parse(localStorage.get
 function lapseEl_(id){return document.getElementById(id)}
 function lapseVal_(id){const e=lapseEl_(id);return e?e.value:''}
 function lapseSafe_(v){return String(v==null?'':v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
-function parsePrismDate_(v){const m=String(v||'').trim().match(/(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i);if(!m)return'';const mm={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()];const d=new Date(+m[3],mm,+m[1]);return isNaN(d)?'':d.toISOString().slice(0,10)}
+function parsePrismDate_(v){const m=String(v||'').trim().match(/(\d{1,2})\s+([A-Z]{3})\s+(\d{4})/i);if(!m)return'';const mm={JAN:0,FEB:1,MAR:2,APR:3,MAY:4,JUN:5,JUL:6,AUG:7,SEP:8,OCT:9,NOV:10,DEC:11}[m[2].toUpperCase()];if(mm===undefined)return'';const y=+m[3],day=+m[1];if(!y||!day)return'';const pad=n=>String(n).padStart(2,'0');return y+'-'+pad(mm+1)+'-'+pad(day)}
 function dateOnly_(v){if(!v)return null;const d=new Date(v+'T00:00:00');return isNaN(d)?null:d}
 function formatDatePh_(v){const d=dateOnly_(v);return d?d.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}):''}
 function daysBetween_(a,b){return Math.floor((b-a)/86400000)}
@@ -3928,18 +3928,44 @@ function addMonthsSafe_(d,n){const x=new Date(d);const day=x.getDate();x.setDate
 function delayInfo_(paidTo){const due=dateOnly_(paidTo),today=new Date();today.setHours(0,0,0,0);if(!due)return{days:0,cls:'green',label:'No date'};const days=Math.max(0,daysBetween_(due,today));if(days<=0)return{days:0,cls:'green',label:'Current'};let cls=days>=75?'red':days>=60?'orange':days>=30?'yellow':'green';return{days,cls,label:days+' day'+(days===1?'':'s')+' delayed'}}
 function monthsPaid_(effectivity,paidTo){const a=dateOnly_(effectivity),b=dateOnly_(paidTo);if(!a||!b)return 0;let m=(b.getFullYear()-a.getFullYear())*12+(b.getMonth()-a.getMonth());if(b.getDate()>=a.getDate())m++;return Math.max(0,m)}
 function firstName_(owner){let s=String(owner||'').trim();if(s.includes(','))s=s.split(',')[1].trim();return (s.split(/\s+/)[0]||'Client').replace(/[^A-Za-zÀ-ÿ'-]/g,'')}
-function missedDueDates_(paidTo){const d=dateOnly_(paidTo),today=new Date();today.setHours(0,0,0,0);if(!d||today<=d)return'⚠️ Last due date: '+formatDatePh_(paidTo);let out=[],i=0,x=new Date(d);while(x<today&&i<12){out.push('⚠️ '+x.toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}));x=addMonthsSafe_(x,1);i++}return out.join('\n')}
-function reminderForLapse_(r){let t=localStorage.getItem('tjLapseReminderTemplate')||LAPSE_TEMPLATE_DEFAULT;const sal=r.gender==='Female'?"M'":r.gender==='Male'?"S'":'';return t.replaceAll('{{SALUTATION}}',sal).replaceAll('{{FIRST_NAME}}',firstName_(r.owner)).replaceAll('{{POLICY_NUMBER}}',r.policyNo||'').replaceAll('{{OWNER_NAME}}',r.owner||'').replaceAll('{{PREMIUM}}','₱'+Number(r.premium||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})).replaceAll('{{MISSED_DUE_DATES}}',missedDueDates_(r.paidTo))}
+function missedDueDates_(paidTo){const d=dateOnly_(paidTo),today=new Date();today.setHours(0,0,0,0);if(!d||today<=d)return'⚠️ Last due date: '+formatDatePh_(paidTo);let out=[],i=0,x=new Date(d);while(x<today&&i<12){out.push('⚠️ '+x.toLocaleDateString('en-PH',{month:'long',day:'numeric',year:'numeric'}));i++;x=addMonthsSafe_(d,i)}return out.join('\n')}
+function reminderForLapse_(r){let t=localStorage.getItem('tjLapseReminderTemplate')||LAPSE_TEMPLATE_DEFAULT;const sal=r.gender==='Female'?"Ms.":r.gender==='Male'?"Mr.":'';return t.replaceAll('{{SALUTATION}}',sal).replaceAll('{{FIRST_NAME}}',firstName_(r.owner)).replaceAll('{{POLICY_NUMBER}}',r.policyNo||'').replaceAll('{{OWNER_NAME}}',r.owner||'').replaceAll('{{PREMIUM}}','₱'+Number(r.premium||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})).replaceAll('{{MISSED_DUE_DATES}}',missedDueDates_(r.paidTo))}
 async function copyTextSafe_(txt){try{await navigator.clipboard.writeText(txt);alert('Reminder message copied.')}catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();alert('Reminder message copied.')}}
 function copyLapseReminder(id){const r=anticipatedLapseRows.find(x=>x.id===id);if(r)copyTextSafe_(reminderForLapse_(r))}
-function updateLapseGender(id,v){const r=anticipatedLapseRows.find(x=>x.id===id);if(r){r.gender=v;localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport()}}
+function getLapseGenderMap_(){try{return JSON.parse(localStorage.getItem('tjLapseGenderByPolicy')||'{}')||{}}catch(e){return{}}}
+function setLapseGender_(policyNo,gender){if(!policyNo)return;const map=getLapseGenderMap_();if(gender)map[policyNo]=gender;else delete map[policyNo];localStorage.setItem('tjLapseGenderByPolicy',JSON.stringify(map))}
+function updateLapseGender(id,v){const r=anticipatedLapseRows.find(x=>x.id===id);if(r){r.gender=v;setLapseGender_(r.policyNo,v);localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport()}}
 function populateLapseAgentFilter_(){const el=lapseEl_('lapseAgentFilter');if(!el)return;const cur=el.value;const agents=[...new Set(anticipatedLapseRows.map(r=>r.agentName).filter(Boolean))].sort();el.innerHTML='<option value="">All Agents</option>'+agents.map(a=>`<option value="${lapseSafe_(a)}">${lapseSafe_(a)}</option>`).join('');if(agents.includes(cur))el.value=cur}
 function renderLapseReport(){
-  try{const st=$('lapseShotTitle');if(st){const f=$('lapseAgentFilter');st.textContent=(anticipatedLapseRows&&anticipatedLapseRows.length)?('ANTICIPATED LAPSE REPORT — '+((f&&f.value)||'All Agents')+' — as of '+new Date().toLocaleDateString()):'';}}catch(e){}const body=lapseEl_('lapseRows');if(!body)return;populateLapseAgentFilter_();const af=lapseVal_('lapseAgentFilter'),q=lapseVal_('lapseSearch').toLowerCase();let rows=anticipatedLapseRows.filter(r=>(!af||r.agentName===af)&&(!q||[r.agentName,r.policyNo,r.owner].join(' ').toLowerCase().includes(q)));const delayed=rows.filter(r=>delayInfo_(r.paidTo).days>0),red=rows.filter(r=>delayInfo_(r.paidTo).cls==='red'),pr=rows.filter(r=>monthsPaid_(r.effectivity,r.paidTo)<=13);const sum=lapseEl_('lapseSummary');if(sum)sum.innerHTML=[['Visible Policies',rows.length,'blue'],['Overdue',delayed.length,'orange'],['Red / Critical',red.length,'red'],['1–13 Mo. Paid',pr.length,'green'],['Agents',[...new Set(rows.map(r=>r.agentName))].length,'purple']].map(c=>`<div class="metric ${c[2]}"><div class="num">${c[1]}</div><div class="label">${c[0]}</div></div>`).join('');if(!rows.length){body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:20px;font-weight:900;color:#64748b">No Anticipated Lapse records for this filter.</td></tr>';return}body.innerHTML=rows.map(r=>{const di=delayInfo_(r.paidTo),mp=monthsPaid_(r.effectivity,r.paidTo),within=mp<=13;return `<tr><td><b>${lapseSafe_(r.agentName)}</b><br><small>${lapseSafe_(r.agentCode||'')}</small></td><td><b>${lapseSafe_(r.policyNo)}</b></td><td>${lapseSafe_(r.owner)}</td><td><select onchange="updateLapseGender('${r.id}',this.value)"><option value="" ${!r.gender?'selected':''}>Select</option><option value="Female" ${r.gender==='Female'?'selected':''}>Female (M')</option><option value="Male" ${r.gender==='Male'?'selected':''}>Male (S')</option></select></td><td>₱${Number(r.premium||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td>${formatDatePh_(r.paidTo)}</td><td><span class="lapse-delay ${di.cls}">${di.label}</span></td><td>${formatDatePh_(r.effectivity)}</td><td><div class="pr-indicator"><span class="${within?'pr-on':'pr-off'}">${mp} Mo. Paid</span></div></td><td><button class="btn-green btn-small" onclick="copyLapseReminder('${r.id}')">Copy Reminder</button></td></tr>`}).join('')}
-function clearLapseReport(){if(!anticipatedLapseRows.length)return;if(!confirm('Clear all uploaded Anticipated Lapse records?'))return;anticipatedLapseRows=[];localStorage.removeItem('tjAnticipatedLapseRows');renderLapseReport();lapseEl_('lapseStatus').textContent='Report cleared.'}
+  try{const st=$('lapseShotTitle');if(st){const f=$('lapseAgentFilter');st.textContent=(anticipatedLapseRows&&anticipatedLapseRows.length)?('ANTICIPATED LAPSE REPORT — '+((f&&f.value)||'All Agents')+' — as of '+new Date().toLocaleDateString()):'';}}catch(e){}const body=lapseEl_('lapseRows');if(!body)return;populateLapseAgentFilter_();const af=lapseVal_('lapseAgentFilter'),q=lapseVal_('lapseSearch').toLowerCase();let rows=anticipatedLapseRows.filter(r=>(!af||r.agentName===af)&&(!q||[r.agentName,r.policyNo,r.owner].join(' ').toLowerCase().includes(q)));const delayed=rows.filter(r=>delayInfo_(r.paidTo).days>0),red=rows.filter(r=>delayInfo_(r.paidTo).cls==='red'),pr=rows.filter(r=>monthsPaid_(r.effectivity,r.paidTo)<=13);const sum=lapseEl_('lapseSummary');if(sum)sum.innerHTML=[['Visible Policies',rows.length,'blue'],['Overdue',delayed.length,'orange'],['Red / Critical',red.length,'red'],['1–13 Mo. Paid',pr.length,'green'],['Agents',[...new Set(rows.map(r=>r.agentName))].length,'purple']].map(c=>`<div class="metric ${c[2]}"><div class="num">${c[1]}</div><div class="label">${c[0]}</div></div>`).join('');if(!rows.length){body.innerHTML='<tr><td colspan="10" style="text-align:center;padding:20px;font-weight:900;color:#64748b">No Anticipated Lapse records for this filter.</td></tr>';return}body.innerHTML=rows.map(r=>{const di=delayInfo_(r.paidTo),mp=monthsPaid_(r.effectivity,r.paidTo),within=mp<=13;return `<tr><td><b>${lapseSafe_(r.agentName)}</b><br><small>${lapseSafe_(r.agentCode||'')}</small></td><td><b>${lapseSafe_(r.policyNo)}</b></td><td>${lapseSafe_(r.owner)}</td><td><select onchange="updateLapseGender('${r.id}',this.value)"><option value="" ${!r.gender?'selected':''}>Select</option><option value="Female" ${r.gender==='Female'?'selected':''}>Female (Ms.)</option><option value="Male" ${r.gender==='Male'?'selected':''}>Male (Mr.)</option></select></td><td>₱${Number(r.premium||0).toLocaleString('en-PH',{minimumFractionDigits:2,maximumFractionDigits:2})}</td><td>${formatDatePh_(r.paidTo)}</td><td><span class="lapse-delay ${di.cls}">${di.label}</span></td><td>${formatDatePh_(r.effectivity)}</td><td><div class="pr-indicator"><span class="${within?'pr-on':'pr-off'}">${mp} Mo. Paid</span></div></td><td><button class="btn-green btn-small" onclick="copyLapseReminder('${r.id}')">Copy Reminder</button></td></tr>`}).join('')}
+function clearLapseReport(){if(!anticipatedLapseRows.length)return;if(!confirm('Clear all uploaded Anticipated Lapse records?'))return;anticipatedLapseRows=[];localStorage.removeItem('tjAnticipatedLapseRows');localStorage.removeItem('tjLapseGenderByPolicy');if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();lapseEl_('lapseStatus').textContent='Report cleared.'}
 function groupPdfItemsByLine_(items){const lines=[];items.forEach(it=>{const x=it.transform[4],y=it.transform[5],txt=String(it.str||'').trim();if(!txt)return;let line=lines.find(l=>Math.abs(l.y-y)<2.5);if(!line){line={y,items:[]};lines.push(line)}line.items.push({x,s:txt})});lines.forEach(l=>l.items.sort((a,b)=>a.x-b.x));return lines.sort((a,b)=>b.y-a.y)}
 function textInRange_(lines,y,x1,x2,tol){return lines.filter(l=>Math.abs(l.y-y)<=tol).flatMap(l=>l.items).filter(i=>i.x>=x1&&i.x<x2).sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()}
-async function uploadAnticipatedLapsePdf(event){const file=event.target.files&&event.target.files[0];if(!file)return;const status=lapseEl_('lapseStatus');status.textContent='Reading PDF...';try{if(!window.pdfjsLib)throw new Error('PDF reader library did not load. Please connect to the internet and reopen the file.');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const buf=await file.arrayBuffer(),pdf=await pdfjsLib.getDocument({data:buf}).promise;let out=[],agentName='',agentCode='';for(let pn=1;pn<=pdf.numPages;pn++){status.textContent=`Reading page ${pn} of ${pdf.numPages}...`;const pg=await pdf.getPage(pn),tc=await pg.getTextContent(),lines=groupPdfItemsByLine_(tc.items);for(const l of lines){const txt=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();let am=txt.match(/^AG:\s*(\d+)\s*-\s*(.+)$/i);if(am){agentCode=am[1];agentName=am[2].trim();continue}const pol=l.items.find(i=>/^\d{8}$/.test(i.s)&&i.x<150);if(!pol)continue;const y=l.y;const paidRaw=textInRange_(lines,y,300,420,6),effRaw=textInRange_(lines,y,430,570,6);const all=l.items.map(i=>i.s);const money=all.filter(x=>/^[\d,]+\.\d{2}$/.test(x));const premiumRaw=money.length>=2?money[money.length-2]:(money[0]||'');let owner=textInRange_(lines,y,110,300,10);owner=owner.replace(/\b(PRULINK|PRUHEALTH|ACCOUNT|ASSURANCE|PROTECTOR|EXACT|ELITE|PRIME|SALAMAT)\b.*$/i,'').trim();out.push({id:'lap_'+pn+'_'+pol.s,agentCode,agentName,policyNo:pol.s,owner,paidTo:parsePrismDate_(paidRaw),effectivity:parsePrismDate_(effRaw),premium:Number(String(premiumRaw).replace(/,/g,''))||0,gender:''})}}const genders={};anticipatedLapseRows.forEach(r=>genders[r.agentName+'|'+r.policyNo]=r.gender);out.forEach(r=>r.gender=genders[r.agentName+'|'+r.policyNo]||'');anticipatedLapseRows=out.filter(r=>r.policyNo&&r.owner);localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();status.textContent=`Loaded ${anticipatedLapseRows.length} policies from ${pdf.numPages} PDF page(s).`;event.target.value=''}catch(e){console.error(e);status.textContent='PDF upload failed: '+e.message;alert('Could not read the PDF: '+e.message)}}
+function tjPdfWorkerSrc_(){
+  if(window.__tjPdfWorkerBlobUrl)return window.__tjPdfWorkerBlobUrl;
+  const remote='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  try{
+    // Building the worker from a same-origin blob that importScripts() the CDN file avoids
+    // "cannot construct a cross-origin Worker" errors when this page is opened as a local
+    // file (file://) or from any origin other than cdnjs — the exact scenario that made
+    // PDF parsing silently return 0 rows on some devices.
+    const blob=new Blob([`importScripts(${JSON.stringify(remote)});`],{type:'application/javascript'});
+    window.__tjPdfWorkerBlobUrl=URL.createObjectURL(blob);
+  }catch(e){window.__tjPdfWorkerBlobUrl=remote;}
+  return window.__tjPdfWorkerBlobUrl;
+}
+function findPolicyItem_(items){
+  let pol=items.find(i=>/^\d{8}$/.test(i.s)&&i.x<150);
+  if(pol)return pol;
+  // Fallback: some PDF exports split the 8-digit policy number across adjacent text runs
+  // (e.g. "1746" + "9336") instead of one item — reconstruct it from items left of x=150.
+  const left=items.filter(i=>i.x<150).sort((a,b)=>a.x-b.x);
+  const joined=left.map(i=>i.s).join('').replace(/\s+/g,'');
+  const m=joined.match(/\d{8}/);
+  if(m&&left.length)return{x:left[0].x,s:m[0]};
+  return null;
+}
+async function uploadAnticipatedLapsePdf(event){const file=event.target.files&&event.target.files[0];if(!file)return;const status=lapseEl_('lapseStatus');status.textContent='Reading PDF...';try{if(!window.pdfjsLib)throw new Error('PDF reader library did not load. Please connect to the internet and reopen the file.');pdfjsLib.GlobalWorkerOptions.workerSrc=tjPdfWorkerSrc_();const buf=await file.arrayBuffer(),pdf=await pdfjsLib.getDocument({data:buf}).promise;let out=[],agentName='',agentCode='',linesScanned=0;for(let pn=1;pn<=pdf.numPages;pn++){status.textContent=`Reading page ${pn} of ${pdf.numPages}...`;const pg=await pdf.getPage(pn),tc=await pg.getTextContent(),lines=groupPdfItemsByLine_(tc.items);linesScanned+=lines.length;for(const l of lines){const txt=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();let am=txt.match(/^AG:\s*(\d+)\s*-\s*(.+)$/i);if(am){agentCode=am[1];agentName=am[2].trim();continue}const pol=findPolicyItem_(l.items);if(!pol)continue;const y=l.y;const paidRaw=textInRange_(lines,y,300,420,6),effRaw=textInRange_(lines,y,430,570,6);const all=l.items.map(i=>i.s);const money=all.filter(x=>/^[\d,]+\.\d{2}$/.test(x));const premiumRaw=money.length>=2?money[money.length-2]:(money[0]||'');let owner=textInRange_(lines,y,110,300,10);owner=owner.replace(/\b(PRULINK|PRUHEALTH|ACCOUNT|ASSURANCE|PROTECTOR|EXACT|ELITE|PRIME|SALAMAT)\b.*$/i,'').trim();out.push({id:'lap_'+pn+'_'+pol.s,agentCode,agentName,policyNo:pol.s,owner,paidTo:parsePrismDate_(paidRaw),effectivity:parsePrismDate_(effRaw),premium:Number(String(premiumRaw).replace(/,/g,''))||0,gender:''})}}const parsed=out.filter(r=>r.policyNo&&r.owner);if(!parsed.length){console.warn('[AnticipatedLapse] 0 policies parsed.',{pages:pdf.numPages,linesScanned});status.textContent=`No policies recognized in this PDF (${pdf.numPages} page(s), ${linesScanned} text line(s) scanned). Previous data was kept.`;alert('Walang na-recognize na policy sa PDF na ito, kaya hindi na-touch ang dati mong data.\n\nPages: '+pdf.numPages+' | Lines scanned: '+linesScanned+'\n\nKung tamang PRISM Anticipated Lapse PDF ito, i-screenshot ang message na ito at ipadala kay Claude para ma-ayos.');event.target.value='';return}const genderMap=getLapseGenderMap_();parsed.forEach(r=>r.gender=genderMap[r.policyNo]||'');anticipatedLapseRows=parsed;localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();status.textContent=`Loaded ${anticipatedLapseRows.length} policies from ${pdf.numPages} PDF page(s).`;event.target.value=''}catch(e){console.error(e);status.textContent='PDF upload failed: '+e.message;alert('Could not read the PDF: '+e.message)}}
 function saveLapseTemplate(){const e=lapseEl_('lapseReminderTemplate');if(!e)return;localStorage.setItem('tjLapseReminderTemplate',e.value);if(typeof pushHubSoon==='function')pushHubSoon();alert('Reminder template saved.')}
 function resetLapseTemplate(){localStorage.removeItem('tjLapseReminderTemplate');const e=lapseEl_('lapseReminderTemplate');if(e)e.value=LAPSE_TEMPLATE_DEFAULT;alert('Default reminder restored.')}
 function initLapseUi_(){const e=lapseEl_('lapseReminderTemplate');if(e&&!e.value)e.value=localStorage.getItem('tjLapseReminderTemplate')||LAPSE_TEMPLATE_DEFAULT;renderLapseReport()}
@@ -4002,9 +4028,9 @@ async function save(){
   }catch(e){alert(e.message||'Unable to save setup.');btn.disabled=false;btn.textContent='Save Setup & Continue';}
 }
 document.addEventListener('DOMContentLoaded',function(){
-  const f=$('tjssLogo');if(f)f.addEventListener('change',async function(){const file=this.files&&this.files[0];if(!file)return;try{logoData=await compressLogo(file);const p=$('tjssPreview');p.src=logoData;p.style.display='block'}catch(e){alert('Unable to read the logo. Please choose another PNG or JPG file.')}});
-  const b=$('tjssSave');if(b)b.addEventListener('click',save);
-  if(localStorage.getItem(DONE)!=='1')show();else document.documentElement.classList.remove('tj-no-setup');
+  // Initial Admin Setup gate removed — app opens directly, no setup/login screen.
+  document.documentElement.classList.remove('tj-no-setup');
+  const o=$('tjStableSetup');if(o)o.remove();
 });
 })();
 </script>
@@ -5712,23 +5738,7 @@ document.addEventListener('DOMContentLoaded',function(){
 });
 </script>
 
-<style id="tjManualRefreshCss">
-@keyframes tjSpin{to{transform:rotate(360deg)}}
-#tjManualRefreshBtn{position:fixed;bottom:16px;right:16px;z-index:400;display:flex;align-items:center;gap:8px;background:#0794b3;color:#fff;border:none;border-radius:999px;padding:11px 16px;font-weight:1000;font-size:13px;cursor:pointer;box-shadow:0 8px 20px rgba(3,27,69,.25)}
-#tjManualRefreshBtn:hover{background:#0a7f9c}
-#tjManualRefreshBtn:disabled{opacity:.7;cursor:default}
-</style>
-<button id="tjManualRefreshBtn" onclick="tjManualRefresh(this)" title="I-refresh ang data mula cloud" aria-label="Refresh">
-  <svg id="tjRefreshIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 12a8 8 0 0 0-14-5L4 9"/><path d="M4 4v5h5"/><path d="M4 12a8 8 0 0 0 14 5l2-2"/><path d="M20 20v-5h-5"/></svg>
-  <span id="tjRefreshLabel">Refresh</span>
-</button>
-<script id="tjManualRefreshGuard">
-(function(){try{
-  var isForm=new URLSearchParams(location.search).get('page')==='form';
-  var b=document.getElementById('tjManualRefreshBtn');
-  if(b&&isForm)b.style.display='none';
-}catch(e){}})();
-</script>
+<!-- Floating manual Refresh button removed. -->
 
 <script id="examScheduleScript">
 /* ===================== EXAM SCHEDULE TAB (IC Offsite) =====================
