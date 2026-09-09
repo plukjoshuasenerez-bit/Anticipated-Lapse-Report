@@ -3441,12 +3441,11 @@ function mergeHubDataFromSheet(hd){
         if(typeof applyBranding==='function')applyBranding(hd.branding||{});
       }
     }
-    if(Array.isArray(hd.lapseRows)&&(hd.lapseRows.length||!(typeof anticipatedLapseRows!=='undefined'&&anticipatedLapseRows.length))){
-      if(typeof anticipatedLapseRows!=='undefined'&&JSON.stringify(hd.lapseRows)!==JSON.stringify(anticipatedLapseRows)){
-        anticipatedLapseRows=hd.lapseRows;localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));
-        if(typeof renderLapseReport==='function')try{renderLapseReport();}catch(e){}
-      }
-    }
+    /* Anticipated Lapse rows are intentionally NOT pulled from the cloud copy here anymore.
+       Each PDF upload is authoritative for THIS device — a cloud pull used to run ~1.2s
+       after every upload (see pushHubSoon) and silently overwrite the freshly uploaded
+       report with whatever older snapshot was still sitting in the Google Sheet, making
+       new uploads look like they "didn't stick." Keeping this local-only fixes that. */
     if(typeof hd.lapseTemplate==='string'&&hd.lapseTemplate&&hd.lapseTemplate!==localStorage.getItem('tjLapseReminderTemplate')){
       localStorage.setItem('tjLapseReminderTemplate',hd.lapseTemplate);
     }
@@ -3941,17 +3940,25 @@ function renderLapseReport(){
 function clearLapseReport(){if(!anticipatedLapseRows.length)return;if(!confirm('Clear all uploaded Anticipated Lapse records?'))return;anticipatedLapseRows=[];localStorage.removeItem('tjAnticipatedLapseRows');localStorage.removeItem('tjLapseGenderByPolicy');if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();lapseEl_('lapseStatus').textContent='Report cleared.'}
 function groupPdfItemsByLine_(items){const lines=[];items.forEach(it=>{const x=it.transform[4],y=it.transform[5],txt=String(it.str||'').trim();if(!txt)return;let line=lines.find(l=>Math.abs(l.y-y)<2.5);if(!line){line={y,items:[]};lines.push(line)}line.items.push({x,s:txt})});lines.forEach(l=>l.items.sort((a,b)=>a.x-b.x));return lines.sort((a,b)=>b.y-a.y)}
 function textInRange_(lines,y,x1,x2,tol){return lines.filter(l=>Math.abs(l.y-y)<=tol).flatMap(l=>l.items).filter(i=>i.x>=x1&&i.x<x2).sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()}
-function tjPdfWorkerSrc_(){
+const TJ_PDF_WORKER_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+async function tjPdfWorkerSrc_(){
   if(window.__tjPdfWorkerBlobUrl)return window.__tjPdfWorkerBlobUrl;
-  const remote='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   try{
-    // Building the worker from a same-origin blob that importScripts() the CDN file avoids
-    // "cannot construct a cross-origin Worker" errors when this page is opened as a local
-    // file (file://) or from any origin other than cdnjs — the exact scenario that made
-    // PDF parsing silently return 0 rows on some devices.
-    const blob=new Blob([`importScripts(${JSON.stringify(remote)});`],{type:'application/javascript'});
+    // Download the worker script's actual source (over plain fetch, same as any other
+    // resource this page already loads fine) and embed the full code into a same-origin
+    // blob: URL. This avoids "cannot construct a cross-origin Worker" failures some
+    // browsers/devices raise when constructing a Worker directly from a CDN URL — the
+    // blob has everything it needs already inside it, no further network call required
+    // once the worker starts running.
+    const resp=await fetch(TJ_PDF_WORKER_URL);
+    if(!resp.ok)throw new Error('worker fetch HTTP '+resp.status);
+    const code=await resp.text();
+    const blob=new Blob([code],{type:'text/javascript'});
     window.__tjPdfWorkerBlobUrl=URL.createObjectURL(blob);
-  }catch(e){window.__tjPdfWorkerBlobUrl=remote;}
+  }catch(e){
+    console.warn('[AnticipatedLapse] Could not pre-fetch PDF worker script, will use the CDN URL directly.',e);
+    window.__tjPdfWorkerBlobUrl=TJ_PDF_WORKER_URL;
+  }
   return window.__tjPdfWorkerBlobUrl;
 }
 function findPolicyItem_(items){
@@ -3965,7 +3972,20 @@ function findPolicyItem_(items){
   if(m&&left.length)return{x:left[0].x,s:m[0]};
   return null;
 }
-async function uploadAnticipatedLapsePdf(event){const file=event.target.files&&event.target.files[0];if(!file)return;const status=lapseEl_('lapseStatus');status.textContent='Reading PDF...';try{if(!window.pdfjsLib)throw new Error('PDF reader library did not load. Please connect to the internet and reopen the file.');pdfjsLib.GlobalWorkerOptions.workerSrc=tjPdfWorkerSrc_();const buf=await file.arrayBuffer(),pdf=await pdfjsLib.getDocument({data:buf}).promise;let out=[],agentName='',agentCode='',linesScanned=0;for(let pn=1;pn<=pdf.numPages;pn++){status.textContent=`Reading page ${pn} of ${pdf.numPages}...`;const pg=await pdf.getPage(pn),tc=await pg.getTextContent(),lines=groupPdfItemsByLine_(tc.items);linesScanned+=lines.length;for(const l of lines){const txt=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();let am=txt.match(/^AG:\s*(\d+)\s*-\s*(.+)$/i);if(am){agentCode=am[1];agentName=am[2].trim();continue}const pol=findPolicyItem_(l.items);if(!pol)continue;const y=l.y;const paidRaw=textInRange_(lines,y,300,420,6),effRaw=textInRange_(lines,y,430,570,6);const all=l.items.map(i=>i.s);const money=all.filter(x=>/^[\d,]+\.\d{2}$/.test(x));const premiumRaw=money.length>=2?money[money.length-2]:(money[0]||'');let owner=textInRange_(lines,y,110,300,10);owner=owner.replace(/\b(PRULINK|PRUHEALTH|ACCOUNT|ASSURANCE|PROTECTOR|EXACT|ELITE|PRIME|SALAMAT)\b.*$/i,'').trim();out.push({id:'lap_'+pn+'_'+pol.s,agentCode,agentName,policyNo:pol.s,owner,paidTo:parsePrismDate_(paidRaw),effectivity:parsePrismDate_(effRaw),premium:Number(String(premiumRaw).replace(/,/g,''))||0,gender:''})}}const parsed=out.filter(r=>r.policyNo&&r.owner);if(!parsed.length){console.warn('[AnticipatedLapse] 0 policies parsed.',{pages:pdf.numPages,linesScanned});status.textContent=`No policies recognized in this PDF (${pdf.numPages} page(s), ${linesScanned} text line(s) scanned). Previous data was kept.`;alert('Walang na-recognize na policy sa PDF na ito, kaya hindi na-touch ang dati mong data.\n\nPages: '+pdf.numPages+' | Lines scanned: '+linesScanned+'\n\nKung tamang PRISM Anticipated Lapse PDF ito, i-screenshot ang message na ito at ipadala kay Claude para ma-ayos.');event.target.value='';return}const genderMap=getLapseGenderMap_();parsed.forEach(r=>r.gender=genderMap[r.policyNo]||'');anticipatedLapseRows=parsed;localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();status.textContent=`Loaded ${anticipatedLapseRows.length} policies from ${pdf.numPages} PDF page(s).`;event.target.value=''}catch(e){console.error(e);status.textContent='PDF upload failed: '+e.message;alert('Could not read the PDF: '+e.message)}}
+async function tjOpenPdf_(buf){
+  pdfjsLib.GlobalWorkerOptions.workerSrc=await tjPdfWorkerSrc_();
+  try{
+    return await pdfjsLib.getDocument({data:buf}).promise;
+  }catch(e1){
+    // Whatever we picked (embedded-blob or direct CDN worker) didn't come up — try the
+    // other option once before giving up, instead of failing outright.
+    console.warn('[AnticipatedLapse] PDF open failed, retrying with the direct CDN worker URL.',e1);
+    window.__tjPdfWorkerBlobUrl=null;
+    pdfjsLib.GlobalWorkerOptions.workerSrc=TJ_PDF_WORKER_URL;
+    return await pdfjsLib.getDocument({data:buf}).promise;
+  }
+}
+async function uploadAnticipatedLapsePdf(event){const file=event.target.files&&event.target.files[0];if(!file)return;const status=lapseEl_('lapseStatus');status.textContent='Reading PDF...';try{if(!window.pdfjsLib)throw new Error('PDF reader library did not load. Please connect to the internet and reopen the file.');const buf=await file.arrayBuffer(),pdf=await tjOpenPdf_(buf);let out=[],agentName='',agentCode='',linesScanned=0;for(let pn=1;pn<=pdf.numPages;pn++){status.textContent=`Reading page ${pn} of ${pdf.numPages}...`;const pg=await pdf.getPage(pn),tc=await pg.getTextContent(),lines=groupPdfItemsByLine_(tc.items);linesScanned+=lines.length;for(const l of lines){const txt=l.items.map(i=>i.s).join(' ').replace(/\s+/g,' ').trim();let am=txt.match(/^AG:\s*(\d+)\s*-\s*(.+)$/i);if(am){agentCode=am[1];agentName=am[2].trim();continue}const pol=findPolicyItem_(l.items);if(!pol)continue;const y=l.y;const paidRaw=textInRange_(lines,y,300,420,6),effRaw=textInRange_(lines,y,430,570,6);const all=l.items.map(i=>i.s);const money=all.filter(x=>/^[\d,]+\.\d{2}$/.test(x));const premiumRaw=money.length>=2?money[money.length-2]:(money[0]||'');let owner=textInRange_(lines,y,110,300,10);owner=owner.replace(/\b(PRULINK|PRUHEALTH|ACCOUNT|ASSURANCE|PROTECTOR|EXACT|ELITE|PRIME|SALAMAT)\b.*$/i,'').trim();out.push({id:'lap_'+pn+'_'+pol.s,agentCode,agentName,policyNo:pol.s,owner,paidTo:parsePrismDate_(paidRaw),effectivity:parsePrismDate_(effRaw),premium:Number(String(premiumRaw).replace(/,/g,''))||0,gender:''})}}const parsed=out.filter(r=>r.policyNo&&r.owner);if(!parsed.length){console.warn('[AnticipatedLapse] 0 policies parsed.',{pages:pdf.numPages,linesScanned});status.textContent=`No policies recognized in this PDF (${pdf.numPages} page(s), ${linesScanned} text line(s) scanned). Previous data was kept.`;alert('Walang na-recognize na policy sa PDF na ito, kaya hindi na-touch ang dati mong data.\n\nPages: '+pdf.numPages+' | Lines scanned: '+linesScanned+'\n\nKung tamang PRISM Anticipated Lapse PDF ito, i-screenshot ang message na ito at ipadala kay Claude para ma-ayos.');event.target.value='';return}const genderMap=getLapseGenderMap_();parsed.forEach(r=>r.gender=genderMap[r.policyNo]||'');anticipatedLapseRows=parsed;localStorage.setItem('tjAnticipatedLapseRows',JSON.stringify(anticipatedLapseRows));if(typeof pushHubSoon==='function')pushHubSoon();renderLapseReport();status.textContent=`Loaded ${anticipatedLapseRows.length} policies from ${pdf.numPages} PDF page(s).`;event.target.value=''}catch(e){console.error(e);status.textContent='PDF upload failed: '+e.message;alert('Could not read the PDF: '+e.message)}}
 function saveLapseTemplate(){const e=lapseEl_('lapseReminderTemplate');if(!e)return;localStorage.setItem('tjLapseReminderTemplate',e.value);if(typeof pushHubSoon==='function')pushHubSoon();alert('Reminder template saved.')}
 function resetLapseTemplate(){localStorage.removeItem('tjLapseReminderTemplate');const e=lapseEl_('lapseReminderTemplate');if(e)e.value=LAPSE_TEMPLATE_DEFAULT;alert('Default reminder restored.')}
 function initLapseUi_(){const e=lapseEl_('lapseReminderTemplate');if(e&&!e.value)e.value=localStorage.getItem('tjLapseReminderTemplate')||LAPSE_TEMPLATE_DEFAULT;renderLapseReport()}
