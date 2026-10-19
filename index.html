@@ -3256,7 +3256,77 @@ function renderApplicationForm_(){
   + 'google.script.run.withSuccessHandler(function(){show("thanksView");busy("btnSubmit",false,"Submit Application");})'
   + '.withFailureHandler(function(e){alert("Submit failed: "+(e&&e.message?e.message:e));busy("btnSubmit",false,"Submit Application");}).submitApplication(d,PUSER);}'
   + 'function backToForm(){show("formView");}'
-  + '<\/script></body></html>';
+  + '<\/script>
+<!-- v4.3 Spiel Vault edit/save reliability + save notification -->
+<style>
+#tjSpielSaveNotice{position:fixed;right:22px;top:22px;z-index:100000;display:none;max-width:min(420px,calc(100vw - 32px));padding:15px 20px;border-radius:14px;background:#073b8e;color:#fff;box-shadow:0 14px 40px rgba(3,27,69,.28);font-weight:900;border:2px solid #ffd23f;line-height:1.4}
+#tjSpielSaveNotice.show{display:block;animation:tjNoticeIn .2s ease-out}
+@keyframes tjNoticeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.spiel-save-row{background:#0fa968!important;color:#fff!important}
+</style>
+<div id="tjSpielSaveNotice" role="status" aria-live="polite"></div>
+<script id="tjSpielVaultSaveFix">
+(function(){
+  'use strict';
+  var drafts = Object.create(null), noticeTimer;
+  function notifySpielSave(message){
+    var n=document.getElementById('tjSpielSaveNotice');
+    if(!n){alert(message);return;}
+    n.textContent='✅ '+message;
+    n.classList.add('show');
+    clearTimeout(noticeTimer);
+    noticeTimer=setTimeout(function(){n.classList.remove('show');},3000);
+  }
+  window.renderSpielVault=function(){
+    var tb=document.getElementById('spielRows'); if(!tb)return;
+    var q=String(typeof val==='function'?val('spielSearch'):(document.getElementById('spielSearch')||{}).value||'').toLowerCase().trim();
+    var rows=(typeof spielVault!=='undefined'?spielVault:[]).filter(function(r){return !q||[r.group,r.name,r.text].join(' ').toLowerCase().includes(q);});
+    tb.innerHTML=rows.map(function(r){
+      var d=drafts[r.id]||r;
+      return '<tr data-spiel-id="'+esc(r.id)+'">'
+        +'<td><input aria-label="Spiel group" value="'+esc(d.group||'')+'" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'group\',this.value)"></td>'
+        +'<td><input aria-label="Spiel name" value="'+esc(d.name||'')+'" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'name\',this.value)"></td>'
+        +'<td><textarea aria-label="Spiel message" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'text\',this.value)">'+esc(d.text||'')+'</textarea></td>'
+        +'<td><button class="btn-small spiel-save-row" onclick="tjSaveSpielEdit(\''+esc(r.id)+'\',this)">Save Edit</button> '
+        +'<button class="btn-small" onclick="copySpielVault(\''+esc(r.id)+'\',this)">Copy</button> '
+        +'<button class="btn-small btn-red" onclick="delSpielVault(\''+esc(r.id)+'\')">Del</button></td></tr>';
+    }).join('')||'<tr><td colspan="4">No saved spiel found.</td></tr>';
+  };
+  window.tjSpielDraft=function(id,key,value){
+    var original=(typeof spielVault!=='undefined'?spielVault:[]).find(function(r){return String(r.id)===String(id);});
+    if(!original)return;
+    if(!drafts[id])drafts[id]=Object.assign({},original);
+    drafts[id][key]=value;
+  };
+  window.tjSaveSpielEdit=function(id,button){
+    var d=drafts[id];
+    if(!d){notifySpielSave('Walang bagong changes na ise-save.');return;}
+    var current=(typeof spielVault!=='undefined'?spielVault:[]).find(function(r){return String(r.id)===String(id);});
+    if(!current){notifySpielSave('Hindi mahanap ang saved message.');return;}
+    spielVault=spielVault.map(function(r){return String(r.id)===String(id)?Object.assign({},r,{group:d.group||'',name:d.name||'',text:d.text||'',updatedAt:new Date().toISOString()}):r;});
+    try{
+      if(typeof saveVaults==='function')saveVaults();
+      else {localStorage.setItem('tjLicensingSpiels',JSON.stringify(spielVault));}
+      delete drafts[id];
+      window.renderSpielVault();
+      notifySpielSave('Message updated and saved on this device. Cloud sync has been queued if configured.');
+    }catch(e){console.error('[Spiel Vault Save]',e);notifySpielSave('Hindi na-save ang message: '+(e.message||'Unknown error'));}
+  };
+  var oldAddSpiel=window.addSpielVault;
+  window.addSpielVault=function(){
+    var name=(document.getElementById('spielName')||{}).value||'';
+    var message=(document.getElementById('spielText')||{}).value||'';
+    if(!String(name).trim()&&!String(message).trim()){alert('Add spiel name and message.');return;}
+    try{
+      if(typeof oldAddSpiel==='function')oldAddSpiel();
+      else {var rec={id:typeof uid==='function'?uid():String(Date.now()),group:(document.getElementById('spielGroup')||{}).value||'',name:name,text:message,createdAt:new Date().toISOString()};spielVault.unshift(rec);localStorage.setItem('tjLicensingSpiels',JSON.stringify(spielVault));window.renderSpielVault();}
+      notifySpielSave('New message saved on this device. Cloud sync has been queued if configured.');
+    }catch(e){console.error('[Spiel Vault Add]',e);notifySpielSave('Hindi na-save ang message: '+(e.message||'Unknown error'));}
+  };
+})();
+</script>
+
+</body></html>';
   return HtmlService.createHtmlOutput(h).setTitle(tNameRaw + ' Application Portal').addMetaTag('viewport','width=device-width, initial-scale=1');
 }
 function submitApplication(data, user){
@@ -6506,5 +6576,75 @@ function activate(){
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',activate,{once:true});else activate();
 })();
 </script>
+
+<!-- v4.3 Spiel Vault edit/save reliability + save notification -->
+<style>
+#tjSpielSaveNotice{position:fixed;right:22px;top:22px;z-index:100000;display:none;max-width:min(420px,calc(100vw - 32px));padding:15px 20px;border-radius:14px;background:#073b8e;color:#fff;box-shadow:0 14px 40px rgba(3,27,69,.28);font-weight:900;border:2px solid #ffd23f;line-height:1.4}
+#tjSpielSaveNotice.show{display:block;animation:tjNoticeIn .2s ease-out}
+@keyframes tjNoticeIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+.spiel-save-row{background:#0fa968!important;color:#fff!important}
+</style>
+<div id="tjSpielSaveNotice" role="status" aria-live="polite"></div>
+<script id="tjSpielVaultSaveFix">
+(function(){
+  'use strict';
+  var drafts = Object.create(null), noticeTimer;
+  function notifySpielSave(message){
+    var n=document.getElementById('tjSpielSaveNotice');
+    if(!n){alert(message);return;}
+    n.textContent='✅ '+message;
+    n.classList.add('show');
+    clearTimeout(noticeTimer);
+    noticeTimer=setTimeout(function(){n.classList.remove('show');},3000);
+  }
+  window.renderSpielVault=function(){
+    var tb=document.getElementById('spielRows'); if(!tb)return;
+    var q=String(typeof val==='function'?val('spielSearch'):(document.getElementById('spielSearch')||{}).value||'').toLowerCase().trim();
+    var rows=(typeof spielVault!=='undefined'?spielVault:[]).filter(function(r){return !q||[r.group,r.name,r.text].join(' ').toLowerCase().includes(q);});
+    tb.innerHTML=rows.map(function(r){
+      var d=drafts[r.id]||r;
+      return '<tr data-spiel-id="'+esc(r.id)+'">'
+        +'<td><input aria-label="Spiel group" value="'+esc(d.group||'')+'" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'group\',this.value)"></td>'
+        +'<td><input aria-label="Spiel name" value="'+esc(d.name||'')+'" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'name\',this.value)"></td>'
+        +'<td><textarea aria-label="Spiel message" oninput="tjSpielDraft(\''+esc(r.id)+'\',\'text\',this.value)">'+esc(d.text||'')+'</textarea></td>'
+        +'<td><button class="btn-small spiel-save-row" onclick="tjSaveSpielEdit(\''+esc(r.id)+'\',this)">Save Edit</button> '
+        +'<button class="btn-small" onclick="copySpielVault(\''+esc(r.id)+'\',this)">Copy</button> '
+        +'<button class="btn-small btn-red" onclick="delSpielVault(\''+esc(r.id)+'\')">Del</button></td></tr>';
+    }).join('')||'<tr><td colspan="4">No saved spiel found.</td></tr>';
+  };
+  window.tjSpielDraft=function(id,key,value){
+    var original=(typeof spielVault!=='undefined'?spielVault:[]).find(function(r){return String(r.id)===String(id);});
+    if(!original)return;
+    if(!drafts[id])drafts[id]=Object.assign({},original);
+    drafts[id][key]=value;
+  };
+  window.tjSaveSpielEdit=function(id,button){
+    var d=drafts[id];
+    if(!d){notifySpielSave('Walang bagong changes na ise-save.');return;}
+    var current=(typeof spielVault!=='undefined'?spielVault:[]).find(function(r){return String(r.id)===String(id);});
+    if(!current){notifySpielSave('Hindi mahanap ang saved message.');return;}
+    spielVault=spielVault.map(function(r){return String(r.id)===String(id)?Object.assign({},r,{group:d.group||'',name:d.name||'',text:d.text||'',updatedAt:new Date().toISOString()}):r;});
+    try{
+      if(typeof saveVaults==='function')saveVaults();
+      else {localStorage.setItem('tjLicensingSpiels',JSON.stringify(spielVault));}
+      delete drafts[id];
+      window.renderSpielVault();
+      notifySpielSave('Message updated and saved on this device. Cloud sync has been queued if configured.');
+    }catch(e){console.error('[Spiel Vault Save]',e);notifySpielSave('Hindi na-save ang message: '+(e.message||'Unknown error'));}
+  };
+  var oldAddSpiel=window.addSpielVault;
+  window.addSpielVault=function(){
+    var name=(document.getElementById('spielName')||{}).value||'';
+    var message=(document.getElementById('spielText')||{}).value||'';
+    if(!String(name).trim()&&!String(message).trim()){alert('Add spiel name and message.');return;}
+    try{
+      if(typeof oldAddSpiel==='function')oldAddSpiel();
+      else {var rec={id:typeof uid==='function'?uid():String(Date.now()),group:(document.getElementById('spielGroup')||{}).value||'',name:name,text:message,createdAt:new Date().toISOString()};spielVault.unshift(rec);localStorage.setItem('tjLicensingSpiels',JSON.stringify(spielVault));window.renderSpielVault();}
+      notifySpielSave('New message saved on this device. Cloud sync has been queued if configured.');
+    }catch(e){console.error('[Spiel Vault Add]',e);notifySpielSave('Hindi na-save ang message: '+(e.message||'Unknown error'));}
+  };
+})();
+</script>
+
 </body>
 </html>
